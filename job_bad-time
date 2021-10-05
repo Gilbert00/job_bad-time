@@ -1,0 +1,247 @@
+#!/bin/bash
+#
+# v 0.0.4
+#
+
+if [ $# -ne 2 ]; then
+  echo "Usage: $(basename $0) <policy> <client>"
+  exit 1
+fi
+
+# get master name
+# check policy if it is exists
+# check client if it is exists in policy
+# get current time
+# check current time to Schedulers intervals
+# if not:
+#   select active jobs with our policy,client
+#   check scheduler for curr-time
+#   cancel their
+#   send mail to admins
+#
+# job_bad-time test_job_break msk-dc5v.main.mmbank.ru
+
+###set -x  #!!!!
+
+Policy=$1
+Client=$2
+
+Err="***Error***:"
+
+Dir=/usr/openv/netbackup/db/class
+SubDir=/schedule
+
+PlList=/usr/openv/netbackup/bin/admincmd/bppllist
+
+Master=$(sed -n '1P' /usr/openv/netbackup/bp.conf | sed -n 's/SERVER = //p')
+#echo $Master
+
+FilePolActive="/tmp/$(basename $0)_${Policy}_A.tmp"
+FilePolScheds="/tmp/$(basename $0)_${Policy}_Scheds.tmp"
+
+DaySecs=$((3600*24))
+
+function check_policy()
+{
+  Pol=$1
+  N=`$PlList | grep "$Pol"| wc -l`
+  if [ $N -eq 0 ]; then
+    echo "${Err}Policy $Pol don't exists !"
+	return 1
+  fi  
+  return 0
+}
+
+function check_client()
+{
+  Pol=$1
+  Cli=$2
+  local CliFile="$DirPolicy/clients"
+#  echo "CliFile:$CliFile"
+  if [[ ! -f $CliFile ]]; then
+    echo "${Err}Clients are absent in Policy $Pol !"
+    return 1
+  fi
+  
+  local N=$(grep -i "$Cli" $CliFile | wc -l)
+  if [ $N -eq 0 ]; then
+    echo "${Err}Client $Cli don't exists in $Pol !"
+	return 2
+  fi 
+  
+  return 0
+}
+
+function check_interval()
+# Beg End TimeSec
+{
+  local Beg=$1
+  local End=$2
+  local TimeSec=$3
+  
+  if [[ $Beg -gt $End ]]; then
+    let End+=DaySecs
+  fi
+  
+  if [[ $Beg -le $TimeSec ]] && [[ $TimeSec -le $End ]]; then
+    return 0
+  else
+    return 1  
+  fi
+} 
+
+function check_time()
+# $SchedWin $WeekID $TimeSec
+{
+  local arrWin=($1)
+  local WeekID=$2
+  local TimeSec=$3
+  #local DaySecs=3600*24
+  
+  local iBeg=$((WeekID*2))
+  local iEnd=$((iBeg+1))
+  local FullSec=$((DaySecs*WeekID+TimeSec))
+  
+  local Beg=${arrWin[iBeg]}
+  local End=${arrWin[iEnd]}
+  check_interval $Beg $End $TimeSec
+  if [[ $? -eq 0 ]]; then
+    return 0
+  fi
+
+  if [[ $WeekID -gt 0 ]]; then
+    ((iBeg-=2))
+    ((iEnd-=2))
+  else
+    iBeg=12
+    iEnd=13
+  fi
+  Beg=${arrWin[iBeg]}
+  End=${arrWin[iEnd]}
+
+  if [[ $TimeSec -le $End ]]; then
+    return 0
+  else
+    return 1  
+  fi
+    
+#    check_interval $Beg $End $TimeSec
+#    if [[ $? -eq 0 ]]; then
+#      return 0
+#    fi   
+#  fi 
+  
+  return 0
+}
+
+MailLine=0
+
+function add_to_mail()
+{
+  ((MailLine++))
+
+}
+
+function send_mail()
+{
+  if [[ $MailLine -eq 0 ]]; then
+    return 0
+  fi	
+	
+  return 0
+}
+
+
+function check_sched()
+# $Policy $JobSched $CurrTime $JobID
+{
+	local Pol=$1
+	local Sched=$2
+	local CT=$3
+	local JobID=$4
+	local arrCT=($(echo $CT | awk -F- '{print $1,$2,$3,$4}'))
+	local WeekID=${arrCT[0]}
+	local Hour=${arrCT[1]}
+	local Minuts=${arrCT[2]}
+	local Seconds=${arrCT[3]}
+	local TimeSec=$(((Hour*60+Minuts)*60+Seconds))
+	local Line
+
+	bpplsched $Pol -l > $FilePolScheds
+	
+	local SchedIsFound=0
+
+	while read Line
+	do
+      if [[ $Line =~ SCHED\  ]]; then
+	    SchedName=$(echo $Line | awk '{print $2}')
+	    echo "SchedName:$SchedName"
+	    if [[ $Sched == $SchedName ]]; then
+		  SchedIsFound=1
+	    else 	
+	      SchedIsFound=0
+	    fi
+	  elif [[ $Line =~ ^SCHEDWIN ]] && [[ $SchedIsFound -eq 1 ]]; then	
+	    local SchedWin=${Line:9}   
+		check_time "$SchedWin" $WeekID $TimeSec
+		if [[ $? -eq 1 ]]; then
+		  echo "JobID:$JobID"
+		  bpdbjobs -cancel $JobID
+		  add_to_mail $JobID
+		fi
+		break
+	  fi
+
+	done < $FilePolScheds
+}
+
+#echo Policy:$Policy
+check_policy $Policy
+if [[ $? -gt 0 ]]; then
+  exit 1
+fi
+
+DirPolicy=$Dir/$Policy
+DirSched=$DirPolicy$SubDir
+#echo DirPolicy:$DirPolicy
+#echo DirSched:$DirSched
+if [[ ! -d $DirPolicy ]]; then
+  echo "$DirPolicy: no such directory !"
+  exit 2
+elif [[ ! -d $DirSched ]]; then 
+  echo "$DirSched: no such directory !"
+  exit 3
+fi
+
+OldDir=$(pwd)
+cd $DirSched
+
+
+#echo Client:$Client
+check_client $Policy $Client
+if [[ $? -gt 0 ]]; then
+  exit 4
+fi
+
+CurrTime=$(date +%w-%H-%M-%S)
+
+bpdbjobs -ignore_parent_jobs -gdm  | awk -F, '{if ($3==1) $4="A" ; if ($4=="A") print $1,$4,$5,$6,$7}' | grep -E "$Policy" > $FilePolActive
+
+while read Line
+do
+  arrJob=($Line)
+  JobID=${arrJob[0]}
+  JobPol=${arrJob[2]}
+  JobSched=${arrJob[3]}
+  JobCli=${arrJob[4]}
+  
+  if [[ $JobCli == $Client ]]; then
+    check_sched $Policy $JobSched $CurrTime $JobID
+  
+  fi
+done < $FilePolActive
+
+send_mail
+
+cd $OldDir
+exit 0
