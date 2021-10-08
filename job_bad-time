@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.1.1
+# v 0.1.2
 #
 
 if [ $# -ne 2 ]; then
@@ -155,7 +155,7 @@ function send_mail()
     return 0
   fi	
   
-  mailx -s "Jobs outside the specified time" backup_group@vtb.ru < $FileMail
+  mailx -s "Jobs are outside the specified time" backup_group@vtb.ru < $FileMail
   return 0
 }
 
