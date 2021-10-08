@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.0.4
+# v 0.1.1
 #
 
 if [ $# -ne 2 ]; then
@@ -20,13 +20,16 @@ fi
 #   send mail to admins
 #
 # job_bad-time test_job_break msk-dc5v.main.mmbank.ru
+# job_bad-time test_job_break dssmng15
 
-###set -x  #!!!!
+##Debug on# set -x  #!!!!
 
 Policy=$1
 Client=$2
 
-Err="***Error***:"
+echo "Start date $(date +%Y.%m.%d_%H:%M:%S)"
+
+Err="***Error***: "
 
 Dir=/usr/openv/netbackup/db/class
 SubDir=/schedule
@@ -38,6 +41,7 @@ Master=$(sed -n '1P' /usr/openv/netbackup/bp.conf | sed -n 's/SERVER = //p')
 
 FilePolActive="/tmp/$(basename $0)_${Policy}_A.tmp"
 FilePolScheds="/tmp/$(basename $0)_${Policy}_Scheds.tmp"
+FileMail="/tmp/$(basename $0)_${Policy}_Mail.tmp"
 
 DaySecs=$((3600*24))
 
@@ -125,21 +129,24 @@ function check_time()
     return 1  
   fi
     
-#    check_interval $Beg $End $TimeSec
-#    if [[ $? -eq 0 ]]; then
-#      return 0
-#    fi   
-#  fi 
-  
   return 0
 }
 
 MailLine=0
 
+function start_mail()
+{
+  echo "" > $FileMail
+  echo "The Jobs has left the set time" >> $FileMail
+  echo "Master:$Master" >> $FileMail
+  echo "Policy:$Policy" >> $FileMail 
+  echo "Client:$Client" >> $FileMail
+}
+
 function add_to_mail()
 {
   ((MailLine++))
-
+  echo "Job:$1 is canceled at $(date +%Y.%m.%d_%H:%M)"  >> $FileMail
 }
 
 function send_mail()
@@ -147,7 +154,8 @@ function send_mail()
   if [[ $MailLine -eq 0 ]]; then
     return 0
   fi	
-	
+  
+  mailx -s "Jobs outside the specified time" backup_group@vtb.ru < $FileMail
   return 0
 }
 
@@ -227,6 +235,8 @@ CurrTime=$(date +%w-%H-%M-%S)
 
 bpdbjobs -ignore_parent_jobs -gdm  | awk -F, '{if ($3==1) $4="A" ; if ($4=="A") print $1,$4,$5,$6,$7}' | grep -E "$Policy" > $FilePolActive
 
+start_mail
+
 while read Line
 do
   arrJob=($Line)
@@ -242,6 +252,8 @@ do
 done < $FilePolActive
 
 send_mail
+
+echo "Ended date $(date +%Y.%m.%d_%H:%M:%S)"
 
 cd $OldDir
 exit 0
