@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# v 0.1.2
+# v 0.2.0
 #
 
-if [ $# -ne 2 ]; then
-  echo "Usage: $(basename $0) <policy> <client>"
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+  echo -e "Usage: $(basename $0) <policy> <client> \n   or  $(basename $0) <policy> <client> 1"
   exit 1
 fi
 
@@ -18,6 +18,8 @@ fi
 #   check scheduler for curr-time
 #   cancel their
 #   send mail to admins
+#  TO-DO: Exclude Dates
+#  TO-DO: Include Dates
 #
 # job_bad-time test_job_break msk-dc5v.main.mmbank.ru
 # job_bad-time test_job_break dssmng15
@@ -26,6 +28,11 @@ fi
 
 Policy=$1
 Client=$2
+if [ $# -eq 3 ] && [ $3 -eq 1 ] ; then
+  DoCancel=1
+else
+  DoCancel=0
+fi  
 
 echo "Start date $(date +%Y.%m.%d_%H:%M:%S)"
 
@@ -43,7 +50,7 @@ FilePolActive="/tmp/$(basename $0)_${Policy}_A.tmp"
 FilePolScheds="/tmp/$(basename $0)_${Policy}_Scheds.tmp"
 FileMail="/tmp/$(basename $0)_${Policy}_Mail.tmp"
 
-DaySecs=$((3600*24))
+readonly DaySecs=$((3600*24))
 
 function check_policy()
 {
@@ -146,7 +153,11 @@ function start_mail()
 function add_to_mail()
 {
   ((MailLine++))
-  echo "Job:$1 is canceled at $(date +%Y.%m.%d_%H:%M)"  >> $FileMail
+  if [[ $DoCancel -eq 1 ]]; then
+    echo "Job:$1 is canceled at $(date +%Y.%m.%d_%H:%M)"  >> $FileMail
+  else
+    echo "Job:$1 has left the set time"  >> $FileMail
+  fi
 }
 
 function send_mail()
@@ -194,7 +205,9 @@ function check_sched()
 		check_time "$SchedWin" $WeekID $TimeSec
 		if [[ $? -eq 1 ]]; then
 		  echo "JobID:$JobID"
-		  bpdbjobs -cancel $JobID
+		  if [[ $DoCancel -eq 1 ]]; then
+		    bpdbjobs -cancel $JobID
+		  fi
 		  add_to_mail $JobID
 		fi
 		break
