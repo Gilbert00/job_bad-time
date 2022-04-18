@@ -23,8 +23,7 @@ fi
 #  TO-DO: Exclude Dates
 #  TO-DO: Include Dates
 #
-# job_bad-time test_job_break msk-dc5v.main.mmbank.ru
-# job_bad-time test_job_break dssmng15
+# job_bad-time test_job_break dssmng15 1
 
 ##Debug on# set -x  #!!!!
 
