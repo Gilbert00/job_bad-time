@@ -1,6 +1,8 @@
 #!/bin/bash
 #
-# v 0.4.1
+# v 0.4.3
+#
+#DONE BUG: In class/<Pol>/schedule/<Sched>/days third fileld is Duration, not EndSec!
 #
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
@@ -51,6 +53,8 @@ FilePolScheds="/tmp/$(basename $0)_${Policy}_Scheds.tmp"
 FileMail="/tmp/$(basename $0)_${Policy}_Mail.tmp"
 
 readonly DaySecs=$((3600*24))
+readonly cInInterval=0
+readonly cOutInterval=1
 
 #---------------------------
 #---------------------------
@@ -90,20 +94,19 @@ function check_client()
 #---------------------------
 #---------------------------
 function check_interval()
-# Beg End TimeSec
+# Beg Dur TimeSec
 {
   local Beg=$1
-  local End=$2
+  local Dur=$2
   local TimeSec=$3
+	local End
   
-  if [[ $Beg -gt $End ]]; then
-    let End+=DaySecs
-  fi
+  let End=Beg+Dur
   
   if [[ $Beg -le $TimeSec ]] && [[ $TimeSec -le $End ]]; then
-    return 0
+    return $cInInterval
   else
-    return 1  
+    return $cOutInterval  
   fi
 } 
 
@@ -117,38 +120,39 @@ function check_time()
   #local DaySecs=3600*24
   
   local iBeg=$((WeekID*2))
-  local iEnd=$((iBeg+1))
-  local FullSec=$((DaySecs*WeekID+TimeSec))
+  local iDur=$((iBeg+1))
+#  local FullSec=$((DaySecs*WeekID+TimeSec))
   
-  local Beg=${arrWin[iBeg]}
-  local End=${arrWin[iEnd]}
-  check_interval $Beg $End $TimeSec
-  if [[ $? -eq 0 ]]; then
-    return 0
-  fi
+  local Beg
+  local Dur
+	
+	for ((i=0; i<7; i++))
+	do
+		Beg=${arrWin[iBeg]}
+    Dur=${arrWin[iDur]}
+		if [[ $Beg -ne 0 ]] || [[ $Dur -ne 0 ]]; then 
+		
+	    FullSec=$((DaySecs*i+TimeSec))
 
-  if [[ $WeekID -gt 0 ]]; then
-    ((iBeg-=2))
-    ((iEnd-=2))
-  else
-    iBeg=12
-    iEnd=13
-  fi
-  Beg=${arrWin[iBeg]}
-  End=${arrWin[iEnd]}
-
-  if [[ $TimeSec -le $End ]]; then
-    return 0
-  else
-    return 1  
-  fi
-    
-  return 0
+      check_interval $Beg $Dur $FullSec
+      if [[ $? -eq $cInInterval ]]; then
+        return $cInInterval
+      fi		
+		fi
+		
+		$((iBeg-=2))
+#		iBeg=$(((iBeg-2))
+	  [[ $iBeg -lt 0 ]] && iBeg=12 
+	  iDur=$((iBeg+1))
+	done
+	    
+  return $cOutInterval
 }
 #---------------------------
 #---------------------------
 
 function day_to_sec()
+# $date
 {
   echo -n "$(date -u --date=$1 +%s)"
 }
@@ -165,7 +169,7 @@ function check_dates()
 	for Dat in $Dates
 	do
     if [[ $Secs -eq $Dat ]]; then
-      return 1		
+      return $cOutInterval		
 	  fi
 	done
 	
@@ -182,7 +186,7 @@ function check_month_days()
 	for D in $Days
 	do
     if [[ $OurDay -eq $D ]]; then
-      return 1		
+      return $cOutInterval		
 	  fi	
 	done
 	
@@ -205,11 +209,11 @@ function check_week_days()
 	for DW in $DaysSplit
 	do
     if [[ $SymDayWeek == $DW ]]; then
-      return 1		
+      return $cOutInterval		
 	  fi	
 	done
 	
-	return 0
+	return $cInInterval
 }
 #---------------------------
 #---------------------------
@@ -321,28 +325,28 @@ function check_sched()
 				len=$(expr length "SCHEDCALEDATES ")
 				local SchedDates=${Line:$len}
 				check_dates "$SchedDates" $FullDay
-				if [[ $? -eq 1 ]]; then
+				if [[ $? -eq $cOutInterval ]]; then
 					bad_time
 				fi
 		  elif [[ $Line =~ ^SCHEDCALEDAYOWEEK ]]; then
 				len=$(expr length "SCHEDCALEDAYOWEEK ")
 				local SchedWeekDays=${Line:$len}
 			  check_week_days "$SchedWeekDays" $DayOnly
-				if [[ $? -eq 1 ]]; then
+				if [[ $? -eq $cOutInterval ]]; then
 					bad_time
 				fi				
 		  elif [[ $Line =~ ^SCHEDCALEDAYOMONTH ]]; then
 				len=$(expr length "SCHEDCALEDAYOMONTH ")
 				local SchedMonthDays=${Line:$len}
         check_month_days "$SchedMonthDays" $DayOnly
-				if [[ $? -eq 1 ]]; then
+				if [[ $? -eq $cOutInterval ]]; then
 					bad_time
 				fi				
 		  elif [[ $Line =~ ^SCHEDWIN ]]; then	
 				len=$(expr length "SCHEDWIN ")
 				local SchedWin=${Line:$len}   
 				check_time "$SchedWin" $WeekID $TimeSec
-				if [[ $? -eq 1 ]]; then
+				if [[ $? -eq $cOutInterval ]]; then
 					bad_time
 				fi
 				break
