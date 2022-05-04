@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.4.3
+# v 0.4.7
 #
 #DONE BUG: In class/<Pol>/schedule/<Sched>/days third fileld is Duration, not EndSec!
 #
@@ -42,14 +42,15 @@ Err="***Error***: "
 Dir=/usr/openv/netbackup/db/class
 SubDir=/schedule
 
-PlList=/usr/openv/netbackup/bin/admincmd/bppllist
+readonly DirNBadminCMD=/usr/openv/netbackup/bin/admincmd
+PlList=$DirNBadminCMD/bppllist
 
 Master=$(sed -n '1P' /usr/openv/netbackup/bp.conf | sed -n 's/SERVER = //p')
 #echo $Master
 
-FilePolActive="/tmp/$(basename $0)_${Policy}_A.tmp"
-FilePolScheds="/tmp/$(basename $0)_${Policy}_Scheds.tmp"
-FileMail="/tmp/$(basename $0)_${Policy}_Mail.tmp"
+FilePolActive="/tmp/$(basename $0)_${Policy}_A_$$.tmp"
+FilePolScheds="/tmp/$(basename $0)_${Policy}_Scheds_$$.tmp"
+FileMail="/tmp/$(basename $0)_${Policy}_Mail_$$.tmp"
 
 readonly DaySecs=$((3600*24))
 readonly cInInterval=0
@@ -139,8 +140,8 @@ function check_time()
       fi		
 		fi
 		
-		$((iBeg-=2))
-#		iBeg=$(((iBeg-2))
+#		$((iBeg-=2))
+		iBeg=$((iBeg-2))
 	  [[ $iBeg -lt 0 ]] && iBeg=12 
 	  iDur=$((iBeg+1))
 	done
@@ -278,7 +279,7 @@ function bad_time()
 {
   echo "JobID:$JobID"
   if [[ $DoCancel -eq 1 ]]; then
-	  bpdbjobs -cancel $JobID
+	  $DirNBadminCMD/bpdbjobs -cancel $JobID
   fi
   add_to_mail $JobID
   send_to_zabbix	 $JobID
@@ -295,14 +296,17 @@ function check_sched()
 	local arrCT=($(echo $CT | awk -F_ '{print $1,$2,$3,$4,$5}'))
 	local WeekID=${arrCT[0]}
 	local Hour=${arrCT[1]}
+	Hour=$(echo $Hour | sed  s'/^0//')
 	local Minuts=${arrCT[2]}
+	Minuts=$(echo $Minuts | sed  s'/^0//')
 	local Seconds=${arrCT[3]}
+	Seconds=$(echo $Seconds | sed  s'/^0//')
 	local FullDay=${arrCT[4]}
 	local DayOnly=$(echo $FullDay | awk -F- '{print $3}')
 	local TimeSec=$(((Hour*60+Minuts)*60+Seconds))
 	local Line
 
-	bpplsched $Pol -l > $FilePolScheds
+	$DirNBadminCMD/bpplsched $Pol -l > $FilePolScheds
 	
 	local SchedIsFound=0
 
@@ -391,7 +395,7 @@ fi
 
 CurrTime=$(date +%w_%H_%M_%S_%Y-%m-%d)
 
-bpdbjobs -ignore_parent_jobs -gdm  | awk -F, '{if ($3==1) $4="A" ; if ($4=="A") print $1,$4,$5,$6,$7}' | grep -E "$Policy" > $FilePolActive
+$DirNBadminCMD/bpdbjobs -ignore_parent_jobs -gdm  | awk -F, '{if ($3==1) $4="A" ; if ($4=="A") print $1,$4,$5,$6,$7}' | grep -E "$Policy" > $FilePolActive
 
 start_mail
 init_zabbix
@@ -412,7 +416,7 @@ done < $FilePolActive
 
 send_mail
 
-echo "Ended date $(date +%Y.%m.%d_%H:%M:%S)"
+echo -e "Ended date $(date +%Y.%m.%d_%H:%M:%S)\n"
 
 cd $OldDir
 exit 0
