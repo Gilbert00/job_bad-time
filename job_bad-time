@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.4.7
+# v 0.5.0
 #
 #DONE BUG: In class/<Pol>/schedule/<Sched>/days third fileld is Duration, not EndSec!
 #
@@ -236,6 +236,7 @@ function send_to_zabbix()
   fi
 
   /usr/bin/zabbix_sender -c /etc/zabbix/zabbix_agentd.conf -k netbackup_bad_job_time -o "$OutStr"
+	/usr/bin/zabbix_sender -c /etc/zabbix/zabbix_agent2.conf -s $(hostname) -k bad.job.time -o "$OutStr"
 }
 #---------------------------
 #---------------------------
